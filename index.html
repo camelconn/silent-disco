@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Silent Disco Sync</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 2rem; }
+    audio { width: 100%; margin-top: 1rem; }
+    #status { margin-top: 1rem; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Silent Disco Player</h1>
+  <p>This player syncs to a shared clock. Press play when ready.</p>
+  <button id="startBtn">Start Synced Playback</button>
+  <audio id="audio" controls preload="auto">
+    <source src="http://icecast.omroep.nl/radio1-bb-mp3" type="audio/mpeg" />
+    Your browser does not support the audio element.
+  </audio>
+  <div id="status"></div>
+
+  <script>
+    const audio = document.getElementById("audio");
+    const status = document.getElementById("status");
+    const startBtn = document.getElementById("startBtn");
+
+    async function syncTime() {
+      const requestStart = performance.now();
+      const response = await fetch("https://worldtimeapi.org/api/timezone/Etc/UTC");
+      const requestEnd = performance.now();
+
+      const data = await response.json();
+      const serverTimeUTC = new Date(data.utc_datetime).getTime();
+      const latency = (requestEnd - requestStart) / 2;
+      const correctedTime = serverTimeUTC + latency;
+      return correctedTime;
+    }
+
+    async function startPlayback() {
+      startBtn.disabled = true;
+      status.textContent = "Syncing clock...";
+
+      const startAtOffset = 0; // change to offset if needed
+      const utcNow = await syncTime();
+      const baseStartTime = Date.parse("2025-01-01T00:00:00Z"); // arbitrary origin
+      const offsetMs = utcNow - baseStartTime + startAtOffset;
+      const startSeconds = (offsetMs / 1000) % (60 * 60); // loop every hour
+
+      status.textContent = `Playing from ${startSeconds.toFixed(2)} seconds...`;
+      try {
+        await audio.play();
+        audio.currentTime = startSeconds;
+      } catch (err) {
+        status.textContent = "Playback failed: " + err.message;
+      }
+    }
+
+    startBtn.addEventListener("click", startPlayback);
+  </script>
+</body>
+</html>
