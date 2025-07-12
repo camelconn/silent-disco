@@ -3,32 +3,34 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Silent Disco - Live Sync</title>
+  <title>Silent Disco - Synced Stream</title>
   <style>
     body { font-family: sans-serif; text-align: center; padding: 2rem; }
-    audio { width: 100%; margin-top: 1rem; }
     #status, #syncInfo { margin-top: 1rem; font-weight: bold; }
     #syncInfo { font-size: 0.9rem; color: #666; }
+    #startBtn { padding: 1em 2em; font-size: 1.2em; margin-top: 1rem; }
   </style>
 </head>
 <body>
-  <h1>Silent Disco - Auto Sync</h1>
-  <p>Joining mid-stream? This player syncs you to the current position automatically.</p>
-  <audio id="audio" controls preload="auto" loop>
+  <h1>Silent Disco</h1>
+  <p>Join the music in sync. Press start to begin.</p>
+  <button id="startBtn">Start Music</button>
+  <audio id="audio" preload="auto" hidden loop>
     <source src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg" />
     Your browser does not support the audio element.
   </audio>
-  <div id="status">Syncing...</div>
+  <div id="status">Waiting to start...</div>
   <div id="syncInfo"></div>
 
   <script>
     const audio = document.getElementById("audio");
     const status = document.getElementById("status");
     const syncInfo = document.getElementById("syncInfo");
+    const startBtn = document.getElementById("startBtn");
 
     let serverOffset = 0;
-    const audioDuration = 356; // Duration in seconds of the MP3 (adjust if using another file)
-    const streamStartUTC = Date.parse("2025-01-01T00:00:00Z"); // Fixed stream origin
+    const audioDuration = 356; // seconds
+    const streamStartUTC = Date.parse("2025-01-01T00:00:00Z");
 
     async function pingTimeServer() {
       const results = [];
@@ -57,14 +59,21 @@
       try {
         audio.currentTime = position;
         await audio.play();
-        status.textContent = `Playing at ${position.toFixed(2)}s (synced)`;
-        syncInfo.textContent = `Offset from server: ${serverOffset.toFixed(0)} ms | Started at UTC: ${new Date(now).toISOString()}`;
+        status.textContent = `Playing synced at ${position.toFixed(2)}s`;
+        syncInfo.textContent = `Offset: ${serverOffset.toFixed(0)} ms | UTC: ${new Date(now).toISOString()}`;
       } catch (err) {
         status.textContent = "Playback error: " + err.message;
       }
     }
 
-    window.addEventListener("load", syncPlayback);
+    startBtn.addEventListener("click", async () => {
+      startBtn.disabled = true;
+      status.textContent = "Syncing and starting playback...";
+      await syncPlayback();
+
+      // Re-sync every minute
+      setInterval(syncPlayback, 60000);
+    });
   </script>
 </body>
 </html>
