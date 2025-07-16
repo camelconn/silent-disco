@@ -3,36 +3,37 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Silent Disco - Synced Stream</title>
+  <title>Silent Disco - HLS Sync</title>
   <style>
     body { font-family: sans-serif; text-align: center; padding: 2rem; }
     #status, #syncInfo { margin-top: 1rem; font-weight: bold; }
     #syncInfo { font-size: 0.9rem; color: #666; }
     #startBtn { padding: 1em 2em; font-size: 1.2em; margin-top: 1rem; }
+    video { width: 100%; max-width: 600px; display: none; }
   </style>
 </head>
 <body>
-  <h1>Silent Disco</h1>
-  <p>Join the music in sync. Press start to begin.</p>
-  <button id="startBtn">Start Music</button>
-  <audio id="audio" preload="auto" hidden loop>
-    <source src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg" />
-    Your browser does not support the audio element.
-  </audio>
-  <div id="status">Waiting to start...</div>
+  <h1>Silent Disco - HLS Synced Player</h1>
+  <p>Click start to sync and play from the correct spot in the live stream.</p>
+  <button id="startBtn">Start Stream</button>
+  <video id="video" controls></video>
+  <div id="status">Waiting for user...</div>
   <div id="syncInfo"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script>
-    const audio = document.getElementById("audio");
+    const video = document.getElementById("video");
     const status = document.getElementById("status");
     const syncInfo = document.getElementById("syncInfo");
     const startBtn = document.getElementById("startBtn");
 
     let serverOffset = 0;
-    const audioDuration = 356; // seconds
-    const streamStartUTC = Date.parse("2025-01-01T00:00:00Z");
 
-    async function pingTimeServer() {
+    // Example public HLS stream
+    const hlsStreamUrl = "https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8";
+    const streamStartUTC = Date.parse("2025-01-01T00:00:00Z"); // replace with actual stream start
+
+    async function syncTimeServer() {
       const results = [];
       for (let i = 0; i < 5; i++) {
         const t0 = performance.now();
@@ -49,31 +50,42 @@
       serverOffset = results.reduce((a, b) => a + b) / results.length;
     }
 
-    async function syncPlayback() {
-      await pingTimeServer();
+    async function startStream() {
+      startBtn.disabled = true;
+      status.textContent = "Syncing time...";
+      await syncTimeServer();
 
       const now = Date.now() + serverOffset;
       const elapsed = (now - streamStartUTC) / 1000;
-      const position = elapsed % audioDuration;
 
-      try {
-        audio.currentTime = position;
-        await audio.play();
-        status.textContent = `Playing synced at ${position.toFixed(2)}s`;
-        syncInfo.textContent = `Offset: ${serverOffset.toFixed(0)} ms | UTC: ${new Date(now).toISOString()}`;
-      } catch (err) {
-        status.textContent = "Playback error: " + err.message;
+      status.textContent = `Loading stream and syncing to ${elapsed.toFixed(2)} seconds...`;
+
+      if (Hls.isSupported()) {
+        const hls = new Hls();
+        hls.loadSource(hlsStreamUrl);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, function () {
+          video.currentTime = elapsed % video.duration;
+          video.play();
+          video.style.display = "block";
+          status.textContent = "Playing synced HLS stream.";
+          syncInfo.textContent = `Offset: ${serverOffset.toFixed(0)} ms | UTC: ${new Date(now).toISOString()}`;
+        });
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = hlsStreamUrl;
+        video.addEventListener("loadedmetadata", function () {
+          video.currentTime = elapsed % video.duration;
+          video.play();
+          video.style.display = "block";
+          status.textContent = "Playing synced HLS stream.";
+          syncInfo.textContent = `Offset: ${serverOffset.toFixed(0)} ms | UTC: ${new Date(now).toISOString()}`;
+        });
+      } else {
+        status.textContent = "HLS not supported on this browser.";
       }
     }
 
-    startBtn.addEventListener("click", async () => {
-      startBtn.disabled = true;
-      status.textContent = "Syncing and starting playback...";
-      await syncPlayback();
-
-      // Re-sync every minute
-      setInterval(syncPlayback, 60000);
-    });
+    startBtn.addEventListener("click", startStream);
   </script>
 </body>
 </html>
