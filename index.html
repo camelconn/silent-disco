@@ -1,91 +1,60 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Silent Disco - HLS Sync</title>
-  <style>
-    body { font-family: sans-serif; text-align: center; padding: 2rem; }
-    #status, #syncInfo { margin-top: 1rem; font-weight: bold; }
-    #syncInfo { font-size: 0.9rem; color: #666; }
-    #startBtn { padding: 1em 2em; font-size: 1.2em; margin-top: 1rem; }
-    video { width: 100%; max-width: 600px; display: none; }
-  </style>
-</head>
+<html>
+<head><meta charset="UTF‑8"><title>HLS PDT Demo Sync</title></head>
 <body>
-  <h1>Silent Disco - HLS Synced Player</h1>
-  <p>Click start to sync and play from the correct spot in the live stream.</p>
-  <button id="startBtn">Start Stream</button>
-  <video id="video" controls></video>
-  <div id="status">Waiting for user...</div>
-  <div id="syncInfo"></div>
+  <button id="go">Start Synced Stream</button>
+  <video id="vid" width="600" controls></video>
+  <pre id="log"></pre>
 
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-  <script>
-    const video = document.getElementById("video");
-    const status = document.getElementById("status");
-    const syncInfo = document.getElementById("syncInfo");
-    const startBtn = document.getElementById("startBtn");
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script>
+const url = 'https://mtoczko.github.io/hls-test-streams/test-program-time/playlist.m3u8';
+const vid = document.getElementById('vid');
+const log = txt => document.getElementById('log').textContent += txt + '\n';
 
-    let serverOffset = 0;
+async function syncClock() {
+  let offsets = [];
+  for (let i=0; i<5; i++){
+    const t0 = performance.now();
+    const res = await fetch('https://worldtimeapi.org/api/timezone/Etc/UTC');
+    const t1 = performance.now();
+    const data = await res.json();
+    offsets.push(new Date(data.utc_datetime).getTime() - (Date.now() + (t1 - t0)/2));
+    await new Promise(r => setTimeout(r,150));
+  }
+  return offsets.reduce((a,b)=>a+b)/offsets.length;
+}
 
-    // Example public HLS stream
-    const hlsStreamUrl = "https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8";
-    const streamStartUTC = Date.parse("2025-01-01T00:00:00Z"); // replace with actual stream start
+async function start(){
+  log('Syncing clock...');
+  const offset = await syncClock();
+  log(`Clock offset: ${offset.toFixed(2)} ms`);
 
-    async function syncTimeServer() {
-      const results = [];
-      for (let i = 0; i < 5; i++) {
-        const t0 = performance.now();
-        const r = await fetch("https://worldtimeapi.org/api/timezone/Etc/UTC");
-        const t1 = performance.now();
-        const data = await r.json();
-        const serverUTC = new Date(data.utc_datetime).getTime();
-        const roundTrip = t1 - t0;
-        const estimatedLocalUTC = Date.now() + (roundTrip / 2);
-        const offset = serverUTC - estimatedLocalUTC;
-        results.push(offset);
-        await new Promise(res => setTimeout(res, 150));
-      }
-      serverOffset = results.reduce((a, b) => a + b) / results.length;
-    }
+  log('Fetching playlist...');
+  const pls = await fetch(url).then(r=>r.text());
+  const lines = pls.split('\n');
+  const pdtLine = lines.reverse().find(l=>l.startsWith('#EXT-X-PROGRAM-DATE-TIME'));
+  const ts = new Date(pdtLine.split(':')[1]).getTime();
+  log(`Latest segment time: ${new Date(ts).toISOString()}`);
 
-    async function startStream() {
-      startBtn.disabled = true;
-      status.textContent = "Syncing time...";
-      await syncTimeServer();
+  const now = Date.now() + offset;
+  const delay = (now - ts) / 1000;
+  log(`Calculated delay: ${delay.toFixed(2)} sec`);
 
-      const now = Date.now() + serverOffset;
-      const elapsed = (now - streamStartUTC) / 1000;
+  vid.style.display = 'block';
+  if (Hls.isSupported()) {
+    const h = new Hls();
+    h.loadSource(url);
+    h.attachMedia(vid);
+    h.on(Hls.Events.MANIFEST_PARSED, ()=>{
+      vid.currentTime = vid.duration - delay; 
+      vid.play();
+      log('Started_PLAY at ' + vid.currentTime.toFixed(2));
+    });
+  }
+}
 
-      status.textContent = `Loading stream and syncing to ${elapsed.toFixed(2)} seconds...`;
-
-      if (Hls.isSupported()) {
-        const hls = new Hls();
-        hls.loadSource(hlsStreamUrl);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, function () {
-          video.currentTime = elapsed % video.duration;
-          video.play();
-          video.style.display = "block";
-          status.textContent = "Playing synced HLS stream.";
-          syncInfo.textContent = `Offset: ${serverOffset.toFixed(0)} ms | UTC: ${new Date(now).toISOString()}`;
-        });
-      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = hlsStreamUrl;
-        video.addEventListener("loadedmetadata", function () {
-          video.currentTime = elapsed % video.duration;
-          video.play();
-          video.style.display = "block";
-          status.textContent = "Playing synced HLS stream.";
-          syncInfo.textContent = `Offset: ${serverOffset.toFixed(0)} ms | UTC: ${new Date(now).toISOString()}`;
-        });
-      } else {
-        status.textContent = "HLS not supported on this browser.";
-      }
-    }
-
-    startBtn.addEventListener("click", startStream);
-  </script>
+document.getElementById('go').onclick = start;
+</script>
 </body>
 </html>
