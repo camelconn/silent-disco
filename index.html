@@ -1,29 +1,29 @@
 <!DOCTYPE html>
 <html>
-<head><meta charset="UTF‑8"><title>HLS PDT Debug Sync</title></head>
+<head><meta charset="UTF-8"><title>Mux Synced Player</title></head>
 <body>
-  <h2>HLS Timestamp Sync Demo</h2>
-  <button id="go">Start Synced Stream</button>
+  <h2>Mux Synced Player</h2>
+  <button id="go">Start Synced Playback</button>
   <video id="vid" width="600" controls style="display:none;"></video>
   <pre id="log"></pre>
 
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 <script>
-const url = 'https://mtoczko.github.io/hls-test-streams/test-program-time/playlist.m3u8';
+const url = 'https://stream.mux.com/xLc5Aj001V01kiD45RAacjdJY01BioCDbrHD00aKDfbwNMk.m3u8';
 const vid = document.getElementById('vid');
 const log = txt => document.getElementById('log').textContent += txt + '\n';
 
 async function syncClock() {
   let offsets = [];
-  for (let i=0; i<5; i++){
+  for (let i = 0; i < 5; i++) {
     const t0 = performance.now();
     const res = await fetch('https://worldtimeapi.org/api/timezone/Etc/UTC');
     const t1 = performance.now();
     const data = await res.json();
     offsets.push(new Date(data.utc_datetime).getTime() - (Date.now() + (t1 - t0)/2));
-    await new Promise(r => setTimeout(r,150));
+    await new Promise(r => setTimeout(r, 150));
   }
-  return offsets.reduce((a,b)=>a+b)/offsets.length;
+  return offsets.reduce((a, b) => a + b) / offsets.length;
 }
 
 async function start(){
@@ -32,19 +32,20 @@ async function start(){
   log(`Clock offset: ${offset.toFixed(2)} ms`);
 
   log('Fetching playlist...');
-  const pls = await fetch(url).then(r=>r.text());
+  const pls = await fetch(url).then(r => r.text());
   const lines = pls.split('\n');
-  const pdtLine = lines.reverse().find(l=>l.startsWith('#EXT-X-PROGRAM-DATE-TIME'));
+  const pdtLine = lines.find(l => l.startsWith('#EXT-X-PROGRAM-DATE-TIME'));
   if (!pdtLine) {
     log('❌ No EXT-X-PROGRAM-DATE-TIME found in playlist!');
     return;
   }
+
   const ts = new Date(pdtLine.split(':')[1]).getTime();
-  log(`Latest segment time: ${new Date(ts).toISOString()}`);
+  log(`First segment time: ${new Date(ts).toISOString()}`);
 
   const now = Date.now() + offset;
-  const delay = (now - ts) / 1000;
-  log(`Calculated delay: ${delay.toFixed(2)} sec`);
+  const elapsed = (now - ts) / 1000;
+  log(`Elapsed time since segment: ${elapsed.toFixed(2)} sec`);
 
   if (Hls.isSupported()) {
     const h = new Hls();
@@ -53,15 +54,11 @@ async function start(){
     h.on(Hls.Events.MANIFEST_PARSED, () => {
       const d = vid.duration;
       log(`Video duration: ${d.toFixed(2)} sec`);
-      const targetTime = d - delay;
-      if (isNaN(targetTime) || targetTime < 0) {
-        log(`❌ Invalid target time: ${targetTime}`);
-        return;
-      }
-      vid.currentTime = targetTime;
+      const seekTime = Math.max(0, Math.min(d - 1, elapsed));
+      vid.currentTime = seekTime;
       vid.style.display = 'block';
       vid.play().then(() => {
-        log(`✅ Playing from ${targetTime.toFixed(2)} sec`);
+        log(`✅ Playing from ${seekTime.toFixed(2)} sec`);
       }).catch(e => log(`❌ Playback error: ${e.message}`));
     });
     h.on(Hls.Events.ERROR, (event, data) => {
