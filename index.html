@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html>
-<head><meta charset="UTF‑8"><title>HLS PDT Demo Sync</title></head>
+<head><meta charset="UTF‑8"><title>HLS PDT Debug Sync</title></head>
 <body>
+  <h2>HLS Timestamp Sync Demo</h2>
   <button id="go">Start Synced Stream</button>
-  <video id="vid" width="600" controls></video>
+  <video id="vid" width="600" controls style="display:none;"></video>
   <pre id="log"></pre>
 
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
@@ -34,6 +35,10 @@ async function start(){
   const pls = await fetch(url).then(r=>r.text());
   const lines = pls.split('\n');
   const pdtLine = lines.reverse().find(l=>l.startsWith('#EXT-X-PROGRAM-DATE-TIME'));
+  if (!pdtLine) {
+    log('❌ No EXT-X-PROGRAM-DATE-TIME found in playlist!');
+    return;
+  }
   const ts = new Date(pdtLine.split(':')[1]).getTime();
   log(`Latest segment time: ${new Date(ts).toISOString()}`);
 
@@ -41,16 +46,29 @@ async function start(){
   const delay = (now - ts) / 1000;
   log(`Calculated delay: ${delay.toFixed(2)} sec`);
 
-  vid.style.display = 'block';
   if (Hls.isSupported()) {
     const h = new Hls();
     h.loadSource(url);
     h.attachMedia(vid);
-    h.on(Hls.Events.MANIFEST_PARSED, ()=>{
-      vid.currentTime = vid.duration - delay; 
-      vid.play();
-      log('Started_PLAY at ' + vid.currentTime.toFixed(2));
+    h.on(Hls.Events.MANIFEST_PARSED, () => {
+      const d = vid.duration;
+      log(`Video duration: ${d.toFixed(2)} sec`);
+      const targetTime = d - delay;
+      if (isNaN(targetTime) || targetTime < 0) {
+        log(`❌ Invalid target time: ${targetTime}`);
+        return;
+      }
+      vid.currentTime = targetTime;
+      vid.style.display = 'block';
+      vid.play().then(() => {
+        log(`✅ Playing from ${targetTime.toFixed(2)} sec`);
+      }).catch(e => log(`❌ Playback error: ${e.message}`));
     });
+    h.on(Hls.Events.ERROR, (event, data) => {
+      log(`❌ HLS.js error: ${data.details || data.type}`);
+    });
+  } else {
+    log('❌ HLS not supported in this browser');
   }
 }
 
